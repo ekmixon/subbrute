@@ -74,8 +74,7 @@ class Lexer(object):
 
     def parse(self):
         while self.state is not None and not self.eof:
-            tok = self.next_token()
-            if tok:
+            if tok := self.next_token():
                 yield tok 
 
     def read(self,n=1):
@@ -87,7 +86,7 @@ class Lexer(object):
         if s == '':
             self.eof = True
         if self.debug:
-            print("Read: >%s<" % repr(s))
+            print(f"Read: >{repr(s)}<")
         return s
 
     def peek(self,n=1):
@@ -102,7 +101,7 @@ class Lexer(object):
             self.eof = True
         self.q.extend(r)
         if self.debug:
-            print("Peek : >%s<" % repr(s + r))
+            print(f"Peek : >{repr(s + r)}<")
         return s + r
 
     def pushback(self,s):
@@ -118,17 +117,17 @@ class Lexer(object):
             if n.isdigit():
                 n = self.read(3)
                 if self.debug:
-                    print("Escape: >%s<" % n)
+                    print(f"Escape: >{n}<")
                 return chr(int(n,8))
             elif n[0] in 'x':
                 x = self.read(3)
                 if self.debug:
-                    print("Escape: >%s<" % x)
+                    print(f"Escape: >{x}<")
                 return chr(int(x[1:],16))
             else:
                 c = self.read(1)
                 if self.debug:
-                    print("Escape: >%s<" % c)
+                    print(f"Escape: >{c}<")
                 return self.escape.get(c,c)
         else:
             self.escaped = False
@@ -186,7 +185,6 @@ class WordLexer(Lexer):
                 return tok(self.lexQuote)
             elif c in self.wordchars:
                 return tok(self.lexWord)
-                return (self.spacetok,self.lexWord)
             elif c:
                 raise ValueError("Invalid input [%d]: %s" % (
                                         self.f.tell(),c))

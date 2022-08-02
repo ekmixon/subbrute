@@ -73,14 +73,13 @@ class DNSLabel(object):
             self.label = label.label
         elif type(label) in (list,tuple):
             self.label = tuple(label)
-        else:
-            if not label or label in (b'.','.'):
-                self.label = ()
-            elif type(label) is not bytes:
-                self.label = tuple(label.encode("idna").\
+        elif not label or label in (b'.','.'):
+            self.label = ()
+        elif type(label) is not bytes:
+            self.label = tuple(label.encode("idna").\
                                 rstrip(b".").split(b"."))
-            else:
-                self.label = tuple(label.rstrip(b".").split(b"."))
+        else:
+            self.label = tuple(label.rstrip(b".").split(b"."))
 
     def add(self,name):
         """
@@ -133,7 +132,7 @@ class DNSLabel(object):
             return self.__eq__(DNSLabel(other))
         else:
             return [ l.lower() for l in self.label ] == \
-                   [ l.lower() for l in other.label ]
+                       [ l.lower() for l in other.label ]
 
     def __len__(self):
         return len(b'.'.join(self.label))
@@ -230,16 +229,15 @@ class DNSBuffer(Buffer):
                 label.extend(self.decode_name(save).label)
                 self.offset = save
                 done = True
+            elif length > 0:
+                l = self.get(length)
+                try:
+                    l.decode()
+                except UnicodeDecodeError:
+                    raise BufferError(f"Invalid label <{l}>")
+                label.append(l)
             else:
-                if length > 0:
-                    l = self.get(length)
-                    try:
-                        l.decode()
-                    except UnicodeDecodeError:
-                        raise BufferError("Invalid label <%s>" % l)
-                    label.append(l)
-                else:
-                    done = True
+                done = True
         return DNSLabel(label)
 
     def encode_name(self,name):

@@ -90,20 +90,20 @@ def new_test(domain,qtype,address="8.8.8.8",port=53,nodig=False):
                 print(";;; ERROR: Diff Question differs")
                 for (d1,d2) in q.diff(q_dig):
                     if d1:
-                        print(";; - %s" % d1)
+                        print(f";; - {d1}")
                     if d2:
-                        print(";; + %s" % d2)
+                        print(f";; + {d2}")
             if a != a_dig:
                 print(";;; ERROR: Diff Response differs")
                 for (d1,d2) in a.diff(a_dig):
                     if d1:
-                        print(";; - %s" % d1)
+                        print(f";; - {d1}")
                     if d2:
-                        print(";; + %s" % d2)
+                        print(f";; + {d2}")
             return
 
-    print("Writing test file: %s-%s" % (domain,qtype))
-    with open("%s-%s" % (domain,qtype),"w") as f:
+    print(f"Writing test file: {domain}-{qtype}")
+    with open(f"{domain}-{qtype}", "w") as f:
         print(";; Sending:",file=f)
         print(";; QUERY:",binascii.hexlify(q.pack()).decode(),file=f)
         print(q,file=f)
@@ -122,7 +122,7 @@ def check_decode(f,debug=False):
 
     # Grab the hex data
     with open(f,'rb') as x:
-        for l in x.readlines():
+        for l in x:
             if l.startswith(b';; QUERY:'):
                 qdata = binascii.unhexlify(l.split()[-1])
             elif l.startswith(b';; RESPONSE:'):
@@ -180,16 +180,16 @@ def print_errors(errors):
             print("Question error:")
             for (d1,d2) in err_data:
                 if d1:
-                    print(";; - %s" % d1)
+                    print(f";; - {d1}")
                 if d2:
-                    print(";; + %s" % d2)
+                    print(f";; + {d2}")
         elif err == 'Reply':
             print("Reply error:")
             for (d1,d2) in err_data:
                 if d1:
-                    print(";; - %s" % d1)
+                    print(f";; - {d1}")
                 if d2:
-                    print(";; + %s" % d2)
+                    print(f";; + {d2}")
         elif err == 'Question Pack':
             print("Question pack error")
             print("QDATA:",binascii.hexlify(err_data[0]))
@@ -230,8 +230,10 @@ if __name__ == '__main__':
                     help="Debug errors (interactive mode)")
     p.add_argument("--glob","-g",default="*",
                     help="Glob pattern")
-    p.add_argument("--testdir","-t",default=testdir,
-                    help="Test dir (%s)" % testdir)
+    p.add_argument(
+        "--testdir", "-t", default=testdir, help=f"Test dir ({testdir})"
+    )
+
     p.add_argument("--testfile","-f",default=None,
                     help="Test single file")
     args = p.parse_args()
@@ -252,7 +254,7 @@ if __name__ == '__main__':
         elif args.interactive:
             for f in glob.iglob(args.glob):
                 if os.path.isfile(f):
-                    print("-- %s: " % f,end='')
+                    print(f"-- {f}: ", end='')
                     e = check_decode(f,args.debug)
                     if not args.debug:
                         if e:
@@ -264,7 +266,7 @@ if __name__ == '__main__':
         elif args.unittest:
             for f in glob.iglob(args.glob):
                 if os.path.isfile(f):
-                    test_name = 'test_%s' % f
+                    test_name = f'test_{f}'
                     test = test_generator(f)
                     setattr(TestContainer,test_name,test)
             unittest.main(argv=[__name__],

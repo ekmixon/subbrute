@@ -57,13 +57,9 @@ if __name__ == '__main__':
     p.add_argument("--log-prefix",action='store_true',default=False,
                     help="Log prefix (timestamp/handler/resolver) (default: False)")
     args = p.parse_args()
-    
-    if args.zonefile:
-        if args.zonefile == '-':
-            args.response = sys.stdin
-        else:
-            args.response = open(args.zonefile)
 
+    if args.zonefile:
+        args.response = sys.stdin if args.zonefile == '-' else open(args.zonefile)
     resolver = FixedResolver(args.response)
     logger = DNSLogger(args.log,args.log_prefix)
 

@@ -33,17 +33,13 @@ class ShellResolver(BaseResolver):
         self.routes = {}
         for r in routes:
             route,_,cmd = r.partition(":")
-            if route.endswith('.'):
-                route = DNSLabel(route)
-            else:
-                route = self.origin.add(route)
+            route = DNSLabel(route) if route.endswith('.') else self.origin.add(route)
             self.routes[route] = cmd
 
     def resolve(self,request,handler):
         reply = request.reply()
         qname = request.q.qname
-        cmd = self.routes.get(qname)
-        if cmd:
+        if cmd := self.routes.get(qname):
             output = getoutput(cmd).encode()
             reply.add_answer(RR(qname,QTYPE.TXT,ttl=self.ttl,
                                 rdata=TXT(output[:254])))
