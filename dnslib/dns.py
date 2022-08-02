@@ -96,18 +96,10 @@ class DNSRecord(object):
         buffer = DNSBuffer(packet)
         try:
             header = DNSHeader.parse(buffer)
-            questions = []
-            rr = []
-            auth = []
-            ar = []
-            for i in range(header.q):
-                questions.append(DNSQuestion.parse(buffer))
-            for i in range(header.a):
-                rr.append(RR.parse(buffer))
-            for i in range(header.auth):
-                auth.append(RR.parse(buffer))
-            for i in range(header.ar):
-                ar.append(RR.parse(buffer))
+            questions = [DNSQuestion.parse(buffer) for _ in range(header.q)]
+            rr = [RR.parse(buffer) for _ in range(header.a)]
+            auth = [RR.parse(buffer) for _ in range(header.auth)]
+            ar = [RR.parse(buffer) for _ in range(header.ar)]
             return cls(header,questions,rr,auth=auth,ar=ar)
         except DNSError:
             raise
@@ -349,10 +341,7 @@ class DNSRecord(object):
             Send packet to nameserver and return response
         """
         data = self.pack()
-        if ipv6:
-            inet = socket.AF_INET6
-        else:
-            inet = socket.AF_INET
+        inet = socket.AF_INET6 if ipv6 else socket.AF_INET
         if tcp:
             if len(data) > 65535:
                 raise ValueError("Packet length too long: %d" % len(data))
@@ -420,10 +409,7 @@ class DNSRecord(object):
         """
             Test for equality by diffing records
         """
-        if type(other) != type(self):
-            return False
-        else:
-            return self.diff(other) == []
+        return False if type(other) != type(self) else self.diff(other) == []
 
     def __ne__(self,other):
         return not(self.__eq__(other))
@@ -444,13 +430,9 @@ class DNSRecord(object):
             b = dict([(k(rr),rr) for rr in getattr(other,section)])
             sa = set(a)
             sb = set(b)
-            for e in sorted(sa.intersection(sb)):
-                if a[e] != b[e]:
-                    err.append((a[e],b[e]))
-            for e in sorted(sa.difference(sb)):
-                err.append((a[e],None))
-            for e in sorted(sb.difference(sa)):
-                err.append((None,b[e]))
+            err.extend((a[e], b[e]) for e in sorted(sa.intersection(sb)) if a[e] != b[e])
+            err.extend((a[e], None) for e in sorted(sa.difference(sb)))
+            err.extend((None, b[e]) for e in sorted(sb.difference(sa)))
         return err
 
     def __repr__(self):
@@ -486,10 +468,7 @@ class DNSHeader(object):
                                 buffer.offset,e))
 
     def __init__(self,id=None,bitmap=None,q=0,a=0,auth=0,ar=0,**args):
-        if id is None:
-            self.id = random.randint(0,65535)
-        else:
-            self.id = id 
+        self.id = random.randint(0,65535) if id is None else id
         if bitmap is None:
             self.bitmap = 0
             self.rd = 1
@@ -623,10 +602,9 @@ class DNSHeader(object):
     def __eq__(self,other):
         if type(other) != type(self):
             return False
-        else:
-            # Ignore id
-            attrs = ('qr','aa','tc','rd','ra','opcode','rcode')
-            return all([getattr(self,x) == getattr(other,x) for x in attrs])
+        # Ignore id
+        attrs = ('qr','aa','tc','rd','ra','opcode','rcode')
+        return all(getattr(self,x) == getattr(other,x) for x in attrs)
 
 class DNSQuestion(object):
     
@@ -650,10 +628,7 @@ class DNSQuestion(object):
         self.qclass = qclass
 
     def set_qname(self,qname):
-        if isinstance(qname,DNSLabel):
-            self._qname = qname
-        else:
-            self._qname = DNSLabel(qname)
+        self._qname = qname if isinstance(qname,DNSLabel) else DNSLabel(qname)
 
     def get_qname(self):
         return self._qname
@@ -681,10 +656,9 @@ class DNSQuestion(object):
     def __eq__(self,other):
         if type(other) != type(self):
             return False
-        else:
-            # List of attributes to compare when diffing
-            attrs = ('qname','qtype','qclass')
-            return all([getattr(self,x) == getattr(other,x) for x in attrs])
+        # List of attributes to compare when diffing
+        attrs = ('qname','qtype','qclass')
+        return all(getattr(self,x) == getattr(other,x) for x in attrs)
             
 class EDNSOption(object):
 
@@ -724,8 +698,7 @@ class EDNSOption(object):
                     self.code,binascii.hexlify(self.data).decode())
 
     def toZone(self):
-        return ";EDNS: code: %s; data: %s" % (
-                    self.code,binascii.hexlify(self.data).decode())
+        return f";EDNS: code: {self.code}; data: {binascii.hexlify(self.data).decode()}"
 
     def __str__(self):
         return self.toZone()
@@ -736,10 +709,9 @@ class EDNSOption(object):
     def __eq__(self,other):
         if type(other) != type(self):
             return False
-        else:
-            # List of attributes to compare when diffing
-            attrs = ('code','data')
-            return all([getattr(self,x) == getattr(other,x) for x in attrs])
+        # List of attributes to compare when diffing
+        attrs = ('code','data')
+        return all(getattr(self,x) == getattr(other,x) for x in attrs)
 
 class RR(object):
 
@@ -759,19 +731,18 @@ class RR(object):
             rname = buffer.decode_name()
             rtype,rclass,ttl,rdlength = buffer.unpack("!HHIH")
             if rtype == QTYPE.OPT:
-                options = []
                 option_buffer = Buffer(buffer.get(rdlength))
+                options = []
                 while option_buffer.remaining() > 4:
                     code,length = option_buffer.unpack("!HH")
                     data = option_buffer.get(length)
                     options.append(EDNSOption(code,data))
                 rdata = options
+            elif rdlength:
+                rdata = RDMAP.get(QTYPE.get(rtype),RD).parse(
+                                        buffer,rdlength)
             else:
-                if rdlength:
-                    rdata = RDMAP.get(QTYPE.get(rtype),RD).parse(
-                                            buffer,rdlength)
-                else:
-                    rdata = ''
+                rdata = ''
             return cls(rname,rtype,rclass,ttl,rdata)
         except (BufferError,BimapError) as e:
             raise DNSError("Error unpacking RR [offset=%d]: %s" % (
@@ -798,10 +769,7 @@ class RR(object):
             self.edns_rcode = get_bits(self.ttl,24,8)
 
     def set_rname(self,rname):
-        if isinstance(rname,DNSLabel):
-            self._rname = rname
-        else:
-            self._rname = DNSLabel(rname)
+        self._rname = rname if isinstance(rname,DNSLabel) else DNSLabel(rname)
 
     def get_rname(self):
         return self._rname
@@ -823,31 +791,36 @@ class RR(object):
         buffer.update(rdlength_ptr,"!H",end-start)
 
     def __repr__(self):
-        if self.rtype == QTYPE.OPT:
-            s = ["<DNS OPT: edns_ver=%d do=%d ext_rcode=%d udp_len=%d>" % (
-                        self.edns_ver,self.edns_do,self.edns_rcode,self.edns_len)]
-            s.extend([repr(opt) for opt in self.rdata])
-            return "\n".join(s)
-        else:
+        if self.rtype != QTYPE.OPT:
             return "<DNS RR: '%s' rtype=%s rclass=%s ttl=%d rdata='%s'>" % (
                     self.rname, QTYPE.get(self.rtype), CLASS.get(self.rclass), 
                     self.ttl, self.rdata)
+        s = [
+            (
+                "<DNS OPT: edns_ver=%d do=%d ext_rcode=%d udp_len=%d>"
+                % (self.edns_ver, self.edns_do, self.edns_rcode, self.edns_len)
+            ),
+            *[repr(opt) for opt in self.rdata],
+        ]
+
+        return "\n".join(s)
 
     def toZone(self):
-        if self.rtype == QTYPE.OPT:
-            edns = [ ";OPT PSEUDOSECTION", 
-                     ";EDNS: version: %d, flags: %s; udp: %d" % (
-                             self.edns_ver, 
-                             "do" if self.edns_do else "",
-                             self.edns_len)
-                    ]
-            edns.extend([str(opt) for opt in self.rdata])
-            return "\n".join(edns)
-        else:
+        if self.rtype != QTYPE.OPT:
             return '%-23s %-7s %-7s %-7s %s' % (self.rname,self.ttl,
                                                 CLASS.get(self.rclass),
                                                 QTYPE.get(self.rtype),
                                                 self.rdata.toZone())
+        edns = [
+            ";OPT PSEUDOSECTION",
+            (
+                ";EDNS: version: %d, flags: %s; udp: %d"
+                % (self.edns_ver, "do" if self.edns_do else "", self.edns_len)
+            ),
+            *[str(opt) for opt in self.rdata],
+        ]
+
+        return "\n".join(edns)
 
     def __str__(self):
         return self.toZone()
@@ -859,14 +832,12 @@ class RR(object):
         # Handle OPT specially as may be different types (RR/EDNS0)
         if self.rtype == QTYPE.OPT and getattr(other,"rtype",False) == QTYPE.OPT:
             attrs = ('rname','rclass','rtype','ttl','rdata')
-            return all([getattr(self,x) == getattr(other,x) for x in attrs])
+        elif type(other) == type(self):
+            # List of attributes to compare when diffing (ignore ttl)
+            attrs = ('rname','rclass','rtype','rdata')
         else:
-            if type(other) != type(self):
-                return False
-            else:
-                # List of attributes to compare when diffing (ignore ttl)
-                attrs = ('rname','rclass','rtype','rdata')
-                return all([getattr(self,x) == getattr(other,x) for x in attrs])
+            return False
+        return all(getattr(self,x) == getattr(other,x) for x in attrs)
 
 class EDNS0(RR):
 
@@ -916,9 +887,9 @@ class EDNS0(RR):
         check_range('ext_rcode',ext_rcode,0,255)
         check_range('version',version,0,255)
         edns_flags = { 'do' : 1 << 15 }
-        flag_bitmap = sum([edns_flags[x] for x in flags.split()])
+        flag_bitmap = sum(edns_flags[x] for x in flags.split())
         ttl = (ext_rcode << 24) + (version << 16) + flag_bitmap
-        if opts and not all([isinstance(o,EDNSOption) for o in opts]):
+        if opts and not all(isinstance(o, EDNSOption) for o in opts):
             raise ValueError("Option must be instance of EDNSOption")
         super(EDNS0,self).__init__(rname,rtype,udp_len,ttl,opts or [])
 
@@ -994,16 +965,13 @@ class RD(object):
         if type(other) != type(self):
             return False
         else:
-            return all([getattr(self,x) == getattr(other,x) for x in self.attrs])
+            return all(getattr(self,x) == getattr(other,x) for x in self.attrs)
 
     def __ne__(self,other):
         return not(self.__eq__(other))
 
 def _force_bytes(x):
-    if isinstance(x,bytes):
-        return x
-    else:
-        return x.encode()
+    return x if isinstance(x,bytes) else x.encode()
 
 class TXT(RD):
     """
@@ -1031,18 +999,16 @@ class TXT(RD):
     @classmethod
     def parse(cls,buffer,length):
         try:
-            data = list()
+            data = []
             start_bo = buffer.offset
             now_length = 0
             while buffer.offset < start_bo + length:
                 (txtlength,) = buffer.unpack("!B")
-                # First byte is TXT length (not in RFC?)
-                if now_length + txtlength < length:
-                    now_length += txtlength
-                    data.append(buffer.get(txtlength))
-                else:
+                if now_length + txtlength >= length:
                     raise DNSError("Invalid TXT record: len(%d) > RD len(%d)" % 
                                             (txtlength,length))
+                now_length += txtlength
+                data.append(buffer.get(txtlength))
             return cls(data)
         except (BufferError,BimapError) as e:
             raise DNSError("Error unpacking TXT [offset=%d]: %s" % 
@@ -1057,13 +1023,13 @@ class TXT(RD):
             self.data = [ _force_bytes(x) for x in data ]
         else:
             self.data = [ _force_bytes(data) ]
-        if any([len(x)>255 for x in self.data]):
-            raise DNSError("TXT record too long: %s" % self.data)
+        if any(len(x) > 255 for x in self.data):
+            raise DNSError(f"TXT record too long: {self.data}")
 
     def pack(self,buffer):
         for ditem in self.data:
             if len(ditem) > 255:
-                raise DNSError("TXT record too long: %s" % ditem)
+                raise DNSError(f"TXT record too long: {ditem}")
             buffer.pack("!B",len(ditem))
             buffer.append(ditem)
 
@@ -1147,11 +1113,8 @@ def _format_ipv6(a):
                     left.append("0")
             else:
                 left.append("%x" % group)
-        else:
-            if group == 0 and len(right) == 0:
-                pass
-            else:
-                right.append("%x" % group)
+        elif group != 0 or right:
+            right.append("%x" % group)
     if len(left) < 8:
         return ":".join(left) + "::" + ":".join(right)
     else:
@@ -1180,10 +1143,7 @@ class AAAA(RD):
         return cls(rd[0])
 
     def __init__(self,data):
-        if type(data) in (tuple,list):
-            self.data = tuple(data)
-        else:
-            self.data = _parse_ipv6(data)
+        self.data = tuple(data) if type(data) in (tuple,list) else _parse_ipv6(data)
 
     def pack(self,buffer):
         buffer.pack("!16B",*self.data)
@@ -1214,10 +1174,7 @@ class MX(RD):
         self.preference = preference
 
     def set_label(self,label):
-        if isinstance(label,DNSLabel):
-            self._label = label
-        else:
-            self._label = DNSLabel(label)
+        self._label = label if isinstance(label,DNSLabel) else DNSLabel(label)
 
     def get_label(self):
         return self._label
@@ -1252,10 +1209,7 @@ class CNAME(RD):
         self.label = label
 
     def set_label(self,label):
-        if isinstance(label,DNSLabel):
-            self._label = label
-        else:
-            self._label = DNSLabel(label)
+        self._label = label if isinstance(label,DNSLabel) else DNSLabel(label)
 
     def get_label(self):
         return self._label
@@ -1266,7 +1220,7 @@ class CNAME(RD):
         buffer.encode_name(self.label)
 
     def __repr__(self):
-        return "%s" % (self.label)
+        return f"{self.label}"
 
     attrs = ('label',)
 
@@ -1300,10 +1254,7 @@ class SOA(RD):
         self.times = tuple(times) if times else (0,0,0,0,0)
 
     def set_mname(self,mname):
-        if isinstance(mname,DNSLabel):
-            self._mname = mname
-        else:
-            self._mname = DNSLabel(mname)
+        self._mname = mname if isinstance(mname,DNSLabel) else DNSLabel(mname)
 
     def get_mname(self):
         return self._mname
@@ -1311,10 +1262,7 @@ class SOA(RD):
     mname = property(get_mname,set_mname)
 
     def set_rname(self,rname):
-        if isinstance(rname,DNSLabel):
-            self._rname = rname
-        else:
-            self._rname = DNSLabel(rname)
+        self._rname = rname if isinstance(rname,DNSLabel) else DNSLabel(rname)
 
     def get_rname(self):
         return self._rname
@@ -1327,8 +1275,7 @@ class SOA(RD):
         buffer.pack("!IIIII", *self.times)
 
     def __repr__(self):
-        return "%s %s %s" % (self.mname,self.rname,
-                             " ".join(map(str,self.times)))
+        return f'{self.mname} {self.rname} {" ".join(map(str,self.times))}'
 
     attrs = ('mname','rname','times')
 
@@ -1359,10 +1306,7 @@ class SRV(RD):
         self.target = target
 
     def set_target(self,target):
-        if isinstance(target,DNSLabel):
-            self._target = target
-        else:
-            self._target = DNSLabel(target)
+        self._target = target if isinstance(target,DNSLabel) else DNSLabel(target)
 
     def get_target(self):
         return self._target
@@ -1508,11 +1452,17 @@ class RRSIG(RD):
 
     @classmethod
     def fromZone(cls,rd,origin=None):
-        return cls(getattr(QTYPE,rd[0]),int(rd[1]),int(rd[2]),int(rd[3]),
-                        int(calendar.timegm(time.strptime(rd[4]+'UTC',"%Y%m%d%H%M%S%Z"))),
-                        int(calendar.timegm(time.strptime(rd[5]+'UTC',"%Y%m%d%H%M%S%Z"))),
-                        int(rd[6]),rd[7],
-                        base64.b64decode(("".join(rd[8:])).encode('ascii')))
+        return cls(
+            getattr(QTYPE, rd[0]),
+            int(rd[1]),
+            int(rd[2]),
+            int(rd[3]),
+            int(calendar.timegm(time.strptime(f'{rd[4]}UTC', "%Y%m%d%H%M%S%Z"))),
+            int(calendar.timegm(time.strptime(f'{rd[5]}UTC', "%Y%m%d%H%M%S%Z"))),
+            int(rd[6]),
+            rd[7],
+            base64.b64decode(("".join(rd[8:])).encode('ascii')),
+        )
 
     def __init__(self,covered,algorithm,labels,orig_ttl,
                       sig_exp,sig_inc,key_tag,name,sig):
@@ -1632,10 +1582,7 @@ def parse_time(s):
     """
         Parse time spec with optional s/m/h/d/w suffix
     """
-    if s[-1].lower() in secs:
-        return int(s[:-1]) * secs[s[-1].lower()]
-    else:
-        return int(s)
+    return int(s[:-1]) * secs[s[-1].lower()] if s[-1].lower() in secs else int(s)
 
 class ZoneParser:
 
@@ -1653,10 +1600,7 @@ class ZoneParser:
         self.l.nltok = ('NL',None)
         self.l.spacetok = ('SPACE',None)
         self.i = iter(self.l)
-        if type(origin) is DNSLabel:
-            self.origin = origin
-        else:
-            self.origin= DNSLabel(origin)
+        self.origin = origin if type(origin) is DNSLabel else DNSLabel(origin)
         self.ttl = ttl
         self.label = DNSLabel("")
         self.prev = None
@@ -1664,7 +1608,7 @@ class ZoneParser:
     def expect(self,expect):
         t,val = next(self.i)
         if t != expect:
-            raise ValueError("Invalid Token: %s (expecting: %s)" % (t,expect))
+            raise ValueError(f"Invalid Token: {t} (expecting: {expect})")
         return val
 
     def parse_label(self,label):
@@ -1672,9 +1616,7 @@ class ZoneParser:
             self.label = DNSLabel(label)
         elif label == "@":
             self.label = self.origin
-        elif label == '':
-            pass
-        else:
+        elif label != '':
             self.label = self.origin.add(label)
         return self.label
 

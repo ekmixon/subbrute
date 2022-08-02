@@ -11,6 +11,7 @@
     See --help for usage.
 """
 
+
 from __future__ import print_function
 
 try:
@@ -60,7 +61,7 @@ if __name__ == '__main__':
     port = int(port or 53)
 
     if args.query:
-        print(";; Sending%s:" % (" (TCP)" if args.tcp else ""))
+        print(f';; Sending{" (TCP)" if args.tcp else ""}:')
         if args.hex:
             print(";; QUERY:",binascii.hexlify(q.pack()).decode())
         print(q)
@@ -113,16 +114,16 @@ if __name__ == '__main__':
                 print(";;; ERROR: Diff Question differs")
                 for (d1,d2) in q.diff(q_diff):
                     if d1:
-                        print(";; - %s" % d1)
+                        print(f";; - {d1}")
                     if d2:
-                        print(";; + %s" % d2)
+                        print(f";; + {d2}")
             if a != a_diff:
                 print(";;; ERROR: Diff Response differs")
                 for (d1,d2) in a.diff(a_diff):
                     if d1:
-                        print(";; - %s" % d1)
+                        print(f";; - {d1}")
                     if d2:
-                        print(";; + %s" % d2)
+                        print(f";; + {d2}")
 
     if args.debug:
         code.interact(local=locals())

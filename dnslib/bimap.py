@@ -65,13 +65,13 @@ class Bimap(object):
         try:
             return self.forward[k]
         except KeyError as e:
-            raise self.error("%s: Invalid forward lookup: [%s]" % (self.name,k))
+            raise self.error(f"{self.name}: Invalid forward lookup: [{k}]")
 
     def __getattr__(self,k):
         try:
             return self.reverse[k]
         except KeyError as e:
-            raise self.error("%s: Invalid reverse lookup: [%s]" % (self.name,k))
+            raise self.error(f"{self.name}: Invalid reverse lookup: [{k}]")
 
 if __name__ == '__main__':
     import doctest

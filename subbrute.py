@@ -61,8 +61,7 @@ class resolver:
         self.last_resolver = name_server
         query = dnslib.DNSRecord.question(hostname, query_type.upper().strip())
         try:
-            response_q = query.send(name_server, 53, use_tcp, timeout = 30)
-            if response_q:
+            if response_q := query.send(name_server, 53, use_tcp, timeout=30):
                 response = dnslib.DNSRecord.parse(response_q)
             else:
                 raise IOError("Empty Response")
@@ -84,10 +83,9 @@ class resolver:
                 trace('!Odd error code:', self.rcode, hostname, query_type)
             #Is this a perm error?  We will have to retry to find out.
             if self.rcode in ['SERVFAIL', 'REFUSED', 'FORMERR', 'NOTIMP', 'NOTAUTH']:
-                raise IOError('DNS Failure: ' + hostname + " - " + self.rcode)
-            #Did we get an empty body and a non-error code?
+                raise IOError(f'DNS Failure: {hostname} - {self.rcode}')
             elif not len(ret) and self.rcode != "NXDOMAIN":
-                raise IOError("DNS Error - " + self.rcode + " - for:" + hostname)
+                raise IOError(f"DNS Error - {self.rcode} - for:{hostname}")
         return ret
 
     def was_successful(self):
@@ -131,10 +129,9 @@ class resolver:
                 rhost, record_type, record = n
                 if record_type == "NS":
                     #Return all A records for this NS lookup.
-                    a_lookup = self.query(record.rstrip("."), 'A', use_tcp=False)   
-                    for a_host, a_type, a_record in a_lookup:
-                        ret.append(a_record)
-                #If a nameserver wasn't found try the parent of this sub.
+                    a_lookup = self.query(record.rstrip("."), 'A', use_tcp=False)
+                    ret.extend(a_record for a_host, a_type, a_record in a_lookup)
+                        #If a nameserver wasn't found try the parent of this sub.
             hostname = hostname[hostname.find(".") + 1:]
         return ret
 
@@ -175,12 +172,9 @@ class verify_nameservers(multiprocessing.Process):
     def verify(self, nameserver_list):
         added_resolver = False
         for server in nameserver_list:
-            server = server.strip()
-            if server:
+            if server := server.strip():
                 try:
-                    #Only add the nameserver to the queue if we can detect wildcards.
-                    verified_server = self.find_wildcards(self.target, server)
-                    if verified_server:
+                    if verified_server := self.find_wildcards(self.target, server):
                         #wildcards have been added to the set, it is now safe to be added to the queue.
                         #blocking queue,  this process will halt on put() when the queue is full:
                         self.add_nameserver(verified_server)
@@ -189,7 +183,7 @@ class verify_nameservers(multiprocessing.Process):
                         trace("Rejected nameserver - wildcard:", server)
                 except Exception as e:
                     #Rejected server :(
-                    trace("Rejected nameserver - unreliable:", server, type(e)) 
+                    trace("Rejected nameserver - unreliable:", server, type(e))
         return added_resolver
 
     def run(self):
@@ -237,11 +231,11 @@ class verify_nameservers(multiprocessing.Process):
         while looking_for_wildcards and test_counter >= 0:
             looking_for_wildcards = False
             #Don't get lost, this nameserver could be playing tricks.
-            test_counter -= 1            
+            test_counter -= 1
             try:
                 #Using a 32 char string every time may be too predictable.
-                x = uuid.uuid4().hex[0:random.randint(6, 32)]
-                testdomain = "%s.%s" % (x, host)
+                x = uuid.uuid4().hex[:random.randint(6, 32)]
+                testdomain = f"{x}.{host}"
                 self.start_time = datetime.datetime.now() # I'm not dead yet!
                 wildtest = self.resolver.query(testdomain, self.query_type, server)
                 #This record may contain a list of wildcards.
@@ -251,16 +245,13 @@ class verify_nameservers(multiprocessing.Process):
                         if record_type in ["CNAME", "A", "AAAA", "MX"]:
                             data = str(data)
                             #All authoritative NS for the same hsot *should* have the same wildcards
-                            if self.prev_wildcards:
-                                #Have we need this wildcard before?
-                                if data in self.prev_wildcards:
+                            if self.prev_wildcards and data in self.prev_wildcards:
                                     #We have seen this wildcards before.
                                     #We do an update, because we may have found a new wildcard
                                     #specific to the NS server we are testing.
-                                    wildcards.update(self.prev_wildcards)
+                                wildcards |= self.prev_wildcards
                                     #Look for afew more wildcards, and then return.
-                                    if test_counter > 2:
-                                        test_counter = 2
+                                test_counter = min(test_counter, 2)
                             if data not in wildcards:
                                 #wildcards were detected.
                                 wildcards[data] = None
@@ -282,13 +273,10 @@ class verify_nameservers(multiprocessing.Process):
             finally:
                 #We always need the return code, it can be None
                 resolver_fail_code = self.resolver.get_returncode()
-        #If we hit the end of our depth counter and,
-        #there are still wildcards, then reject this nameserver because it smells bad.
-        if test_counter >= 0 or self.authoritative:
-            self.prev_wildcards = wildcards
-            return (server, wildcards, resolver_fail_code)
-        else:
+        if test_counter < 0 and not self.authoritative:
             return False
+        self.prev_wildcards = wildcards
+        return (server, wildcards, resolver_fail_code)
 
 class lookup(multiprocessing.Process):
 
@@ -330,7 +318,7 @@ class lookup(multiprocessing.Process):
     def check(self, host, record_type = "ANY", total_rechecks = 0):
         trace("Checking:", host)
         cname_record = []
-        retries = 0        
+        retries = 0
         if len(self.resolver.nameservers) <= self.required_nameservers:
             #This process needs more nameservers,  lets see if we have one available
             self.resolver.add_ns(self.get_ns())
@@ -344,34 +332,29 @@ class lookup(multiprocessing.Process):
                     if self.resolver.was_successful() and not resp:
                         resp = [(host, self.resolver.get_returncode(), "")]
                     return resp
-                if record_type == "CNAME":
-                    added_cname = False
-                    #A max 20 lookups
-                    cname_host = host
-                    resp = self.resolver.query(cname_host, "A", total_rechecks)
-                    if not resp:
-                        resp = self.resolver.query(cname_host, "AAAA", total_rechecks)
-                    if not resp:
-                        resp = self.resolver.query(cname_host, "CNAME", total_rechecks)
-                    for r in resp:
-                        return_name, record_type, record_data = r
-                        #if record_type in ["CNAME", "A", "AAAA"]:
-                        cname_host = str(record_data).rstrip(".")
-                        cname_record.append(cname_host)
-                    if not added_cname:
-                        break
-                    if cname_record:
-                        ret = [(host, record_type, cname_record)]
-                    else:
-                        ret = False
-                        #No response?  then return what we have.
-                    return ret
-                else:
+                if record_type != "CNAME":
                     #All other records:
                     return self.resolver.query(host, record_type)
+                added_cname = False
+                #A max 20 lookups
+                cname_host = host
+                resp = (
+                    self.resolver.query(cname_host, "A", total_rechecks)
+                    or self.resolver.query(cname_host, "AAAA", total_rechecks)
+                    or self.resolver.query(cname_host, "CNAME", total_rechecks)
+                )
+
+                for r in resp:
+                    return_name, record_type, record_data = r
+                    #if record_type in ["CNAME", "A", "AAAA"]:
+                    cname_host = str(record_data).rstrip(".")
+                    cname_record.append(cname_host)
+                if not added_cname:
+                    break
+                return [(host, record_type, cname_record)] if cname_record else False
             except (IOError, TypeError) as e:
                 if total_rechecks >= 2 or \
-                        (retries >= 1 and self.resolver.get_returncode() == "NOERROR"):
+                            (retries >= 1 and self.resolver.get_returncode() == "NOERROR"):
                     #Multiple threads have tried and given up
                     trace('Giving up:', host, self.resolver.get_returncode())
                     return [(host, self.resolver.get_returncode(), "")]
@@ -424,9 +407,9 @@ class lookup(multiprocessing.Process):
                 #This variable doesn't need a muetex, because it has a queue. 
                 #A queue ensure nameserver cannot be used before it's wildcard entries are found.
                 reject = False
-                found = []
                 if response:
                     trace(response)
+                    found = []
                     for record in response:
                         return_name, record_type, data = record
                         data = str(data)
@@ -484,7 +467,7 @@ def extract_hosts(data, hostname = ""):
     #made a global to avoid re-compilation
     global host_match
     ret = []
-    hosts = re.findall(host_match, " " + data)
+    hosts = re.findall(host_match, f" {data}")
     for fh in hosts:
         host = fh.rstrip(".")
         #Is this host in scope?
@@ -512,30 +495,24 @@ def print_target(target, query_type = "ANY", subdomains = "names.txt", resolve_l
         dupe_filter = {}
     for result in run(target, query_type, subdomains, resolve_list, process_count):
         (hostname, record_type, record) = result
-        if not print_data:
-            #We just care about new names, filter multiple records for the same name.
-            if hostname not in dupe_filter:
-                dupe_filter[hostname] = None
-                result = hostname
-            else:
-                result = False
-        else:
+        if print_data:
             if type(record) is type([]):
                 record = ",".join(record)
-            result = "%s,%s,%s" % (hostname, record_type, record)
+            result = f"{hostname},{record_type},{record}"
+        elif hostname not in dupe_filter:
+            dupe_filter[hostname] = None
+            result = hostname
+        else:
+            result = False
         if result:
             print(result)
             sys.stdout.flush()
             if hostname in json_struct:
-                if record_type in json_struct:
-                    json_struct[hostname][record_type].append(record)
-                else:
+                if record_type not in json_struct:
                     json_struct[hostname][record_type] = []
-                    json_struct[hostname][record_type].append(record)
             else:
-                json_struct[hostname] = {}
-                json_struct[hostname][record_type] = []
-                json_struct[hostname][record_type].append(record)
+                json_struct[hostname] = {record_type: []}
+            json_struct[hostname][record_type].append(record)
             if output:
                 output.write(result + "\n")
                 output.flush()

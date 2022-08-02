@@ -104,7 +104,7 @@ class DigParser:
     def expect(self,expect):
         t,val = next(self.i)
         if t != expect:
-            raise ValueError("Invalid Token: %s (expecting: %s)" % (t,expect))
+            raise ValueError(f"Invalid Token: {t} (expecting: {expect})")
         return val
 
     def parseQuestions(self,q,dns):
@@ -122,11 +122,7 @@ class DigParser:
                 rdata = rr[4:]
                 rd = RDMAP.get(rtype,RD)
                 try:
-                    if rd == RD and \
-                       any([ x not in string.hexdigits for x in rdata[-1]]):
-                        # Only support hex encoded data for fallback RD
-                        pass
-                    else:
+                    if rd != RD or all(x in string.hexdigits for x in rdata[-1]):
                         f(RR(rname=rname,
                                 ttl=int(ttl),
                                 rtype=getattr(QTYPE,rtype),
@@ -135,9 +131,6 @@ class DigParser:
                 except DNSError as e:
                     if self.debug:
                         print("DNSError:",e,rr)
-                    else:
-                        # Skip records we dont understand
-                        pass
 
     def __iter__(self):
         return self.parse()

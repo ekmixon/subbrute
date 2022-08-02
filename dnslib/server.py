@@ -129,10 +129,10 @@ class DNSHandler(socketserver.BaseRequestHandler):
             data = self.request.recv(8192)
             length = struct.unpack("!H",bytes(data[:2]))[0]
             while len(data) - 2 < length:
-                new_data = self.request.recv(8192)
-                if not new_data:
+                if new_data := self.request.recv(8192):
+                    data += new_data
+                else:
                     break
-                data += new_data
             data = data[2:]
         else:
             self.protocol = 'udp'
@@ -221,9 +221,8 @@ class DNSLogger:
 
     def log_prefix(self,handler):
         if self.prefix:
-            return "%s [%s:%s] " % (time.strftime("%Y-%m-%d %X"),
-                               handler.__class__.__name__,
-                               handler.server.resolver.__class__.__name__)
+            return f'{time.strftime("%Y-%m-%d %X")} [{handler.__class__.__name__}:{handler.server.resolver.__class__.__name__}] '
+
         else:
             return ""
 
@@ -336,10 +335,7 @@ class DNSServer(object):
             server:     socketserver class (default: UDPServer/TCPServer)
         """
         if not server:
-            if tcp:
-                server = TCPServer
-            else:
-                server = UDPServer
+            server = TCPServer if tcp else UDPServer
         self.server = server((address,port),handler)
         self.server.resolver = resolver
         self.server.logger = logger or DNSLogger()
